@@ -22,7 +22,31 @@ from flaskbb.user.models import User
 from flaskbb.fixtures.settings import available_languages
 from flaskbb.utils.settings import flaskbb_config
 
+import requests
+import json
+from datetime import datetime
+
+CABINET = 'http://127.0.0.1:8000/cabinet/auth'
+CABINET_AUTH = CABINET + '/login/'
+CABINET_REGISTER = CABINET + '/create/'
+
+# r = requests.post(CABINET_AUTH, json={"login": "dante1", "password": "12345"})
+# print(json.loads(r.text))
+
 auth = Blueprint("auth", __name__)
+
+
+def auth_cabinet_user(username, password):
+    req = requests.post(CABINET_AUTH, json={"login": username, "password": password})
+    if not req.text:
+        return False
+
+    res = json.loads(req.text)
+    status = res.get('status')
+    if status != 'OK':
+        return False, None
+
+    return True, res.get('email', None)
 
 
 @auth.route("/login", methods=["GET", "POST"])
@@ -43,6 +67,18 @@ def login():
             login_user(user, remember=form.remember_me.data)
             return redirect(request.args.get("next") or
                             url_for("forum.index"))
+        else:
+            result, email = auth_cabinet_user(form.login.data, form.password.data)
+            if result:
+                user = User(username=form.login.data,
+                            email=email or 'unknown',
+                            password=form.password.data,
+                            date_joined=datetime.utcnow(),
+                            primary_group_id=4)
+                user.save()
+                login_user(user, remember=form.password.data)
+                return redirect(request.args.get("next") or
+                                url_for("forum.index"))
 
         flash(_("Wrong Username or Password."), "danger")
     return render_template("auth/login.html", form=form)
@@ -76,6 +112,20 @@ def logout():
     return redirect(url_for("forum.index"))
 
 
+def create_cabinet_user(username, password, email):
+    req = requests.post(CABINET_REGISTER, json={"login": username, "password": password, 'email': email})
+    if not req.text:
+        return False
+
+    res = json.loads(req.text)
+    status = res.get('status')
+    if status != 'OK':
+        # return res.get('message', '')
+        return False
+
+    return True
+
+
 @auth.route("/register", methods=["GET", "POST"])
 def register():
     """
@@ -99,6 +149,7 @@ def register():
 
     if form.validate_on_submit():
         user = form.save()
+        create_cabinet_user(user.username, user.password, user.email)
         login_user(user)
 
         flash(_("Thanks for registering."), "success")
