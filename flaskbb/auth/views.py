@@ -26,24 +26,20 @@ import requests
 import json
 from datetime import datetime
 
-CABINET = 'http://127.0.0.1:8000/cabinet/auth'
-CABINET_AUTH = CABINET + '/login/'
-CABINET_REGISTER = CABINET + '/create/'
-
-# r = requests.post(CABINET_AUTH, json={"login": "dante1", "password": "12345"})
-# print(json.loads(r.text))
 
 auth = Blueprint("auth", __name__)
 
 
 def auth_cabinet_user(username, password):
-    req = requests.post(CABINET_AUTH, json={"login": username, "password": password})
-    if not req.text:
+    req = requests.post(current_app.config['CABINET_AUTH'], json={"login": username, "password": password})
+    if req.status_code != 200 or not req.text:
+        current_app.logger.error('requests.post to {} failed'.format(current_app.config['CABINET_AUTH']))
         return False
 
     res = json.loads(req.text)
     status = res.get('status')
     if status != 'OK':
+        current_app.logger.warning('auth_cabinet_user: {}'.format(req.text))
         return False, None
 
     return True, res.get('email', None)
@@ -108,19 +104,21 @@ def reauth():
 @login_required
 def logout():
     logout_user()
-    flash(("Logged out"), "success")
+    flash(_("Logged out"), "success")
     return redirect(url_for("forum.index"))
 
 
 def create_cabinet_user(username, password, email):
-    req = requests.post(CABINET_REGISTER, json={"login": username, "password": password, 'email': email})
-    if not req.text:
+    req = requests.post(current_app.config['CABINET_REGISTER'],
+                        json={"login": username, "password": password, 'email': email})
+    if req.status_code != 200 or not req.text:
+        current_app.logger.error('requests.post to {} failed'.format(current_app.config['CABINET_REGISTER']))
         return False
 
     res = json.loads(req.text)
     status = res.get('status')
     if status != 'OK':
-        # return res.get('message', '')
+        current_app.logger.warning('create_cabinet_user: {}'.format(req.text))
         return False
 
     return True
